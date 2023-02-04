@@ -7,4 +7,4 @@ npm install
 npx http-server
 ```
 
-Doesn't work very well in Firefox because `Audio().currentTime` is [alow precision](https://bugzilla.mozilla.org/show_bug.cgi?id=587465).
+Doesn't work very well in Firefox because `Audio().currentTime` is [low precision](https://bugzilla.mozilla.org/show_bug.cgi?id=587465).
