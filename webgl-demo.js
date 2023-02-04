@@ -1,7 +1,6 @@
 import parseBitmapFontData from './modules/bitmapFontParser.js';
 import parseJoyU2Data from './modules/joyU2Parser.js';
 
-// Vertex Shader Program
 const vsSource = `#version 300 es
   in vec2 a_position;
   in vec2 a_texCoord;
@@ -23,7 +22,6 @@ const vsSource = `#version 300 es
   }
 `;
 
-// Fragment Shader Program
 const fsSource = `#version 300 es
   precision highp float;
 
@@ -61,8 +59,7 @@ const BITMAP_FONT_FILENAME = "./0425691.bitmap";
 const JOY_U2_FILENAME = "./0425691.joy_u2";
 const ROMAJI_FONT_FILENAME = "romaji-font.png";
 
-const TIMING_OFFSET = 1500;
-// const TIMING_OFFSET = 11600; // Skip intro for testing
+const TIMING_OFFSET = -200;
 
 const SWITCH_SCREEN_WIDTH = 1280;
 const SWITCH_SCREEN_HEIGHT = 720;
@@ -434,8 +431,8 @@ function populateBitmapFontWithTextureAtlas(gl, bitmapFont) {
   const atlasWidth = BITMAP_FONT_MAX_WIDTH * 10;
   const atlasHeight = BITMAP_FONT_MAX_HEIGHT * 10;
   
-  for (let i = 0; i < textureAtlasBitmaps.length; i++) {
-    const bitmapFontTexture = createTextureFromImage(gl, textureAtlasBitmaps[i], atlasWidth, atlasHeight, gl.LUMINANCE);
+  for (const atlasBitmap of textureAtlasBitmaps) {
+    const bitmapFontTexture = createTextureFromImage(gl, atlasBitmap, atlasWidth, atlasHeight, gl.LUMINANCE);
 
     bitmapFont.textureAtlas.push(bitmapFontTexture);
   }

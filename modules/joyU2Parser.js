@@ -111,7 +111,7 @@ function parseJoyU2TimingData(data, offset, size) {
     currOffset += payloadSize;
 
     events.push({
-      currTime: currTime + 1800,
+      currTime,
       payload: payloadBytes,
     });
   }
