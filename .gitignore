@@ -1,0 +1,7 @@
+.DS_Store
+node_modules/
+*.bitmap
+*.joy_u2
+*.mp3
+*.png
+
