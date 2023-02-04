@@ -51,6 +51,8 @@ function parseLyricsBlock(view, offset) {
     xPos,
     yPos,
     scrollEvents: [],
+    fadeinTime: null,
+    fadeoutTime: null,
     glyphs,
     glyphsRomaji: null,
     furiganaRomaji: null,

@@ -61,7 +61,7 @@ const BITMAP_FONT_FILENAME = "./0425691.bitmap";
 const JOY_U2_FILENAME = "./0425691.joy_u2";
 const ROMAJI_FONT_FILENAME = "romaji-font.png";
 
-const TIMING_OFFSET = 1600;
+const TIMING_OFFSET = 1500;
 // const TIMING_OFFSET = 11600; // Skip intro for testing
 
 const SWITCH_SCREEN_WIDTH = 1280;
@@ -163,15 +163,27 @@ function getScrollXPos(gl, lyricsBlock, refreshTime) {
   let xOff = 0;
     
   for (let i = 0; i < lyricsBlock.scrollEvents.length; i++) {
-    let delta; 
-
-    if (i === lyricsBlock.scrollEvents.length - 1) {
-      delta = refreshTime - lyricsBlock.scrollEvents[i][0]; 
-    } else {
-      delta = lyricsBlock.scrollEvents[i + 1][0] - lyricsBlock.scrollEvents[i][0];
+    const currScrollEvent = lyricsBlock.scrollEvents[i];
+    
+    if (refreshTime < currScrollEvent.time) {
+      break;
+    }
+    
+    let nextScrollEvent = null;
+    
+    if (i < lyricsBlock.scrollEvents.length - 1) {
+      nextScrollEvent = lyricsBlock.scrollEvents[i + 1];
     }
 
-    xOff += (delta / 1000) * lyricsBlock.scrollEvents[i][1];
+    let delta; 
+
+    if (!nextScrollEvent || refreshTime < nextScrollEvent.time) {
+      delta = refreshTime - currScrollEvent.time; 
+    } else {
+      delta = nextScrollEvent.time - currScrollEvent.time;
+    }
+
+    xOff += (delta / 1000) * currScrollEvent.speed;
   }
 
   return getRealXPos(gl, lyricsBlock.xPos + xOff);
@@ -399,44 +411,6 @@ function populateLyricsDataWithRomaji(bitmapFont, lyricsData) {
     lyricsBlock.furiganaRomaji = romajiData.furigana;
   }
 }
- 
-// Let's make an actual timeline / eventHandler class lol   
-function processTimeline(timeline, lyricsData, activeLyricsBlocks, currLyricsBlockIndex, scrollLyricsBlockIndex, lastRefreshTime) {
-  let timelineIndex = 0;
-    
-  while (lastRefreshTime >= timeline[timelineIndex].currTime) {
-    const currEvent = timeline.shift();
-  
-    if (currEvent.payload[0] === 0 || currEvent.payload[0] === 1) {
-      if (currEvent.payload[0] === 0) {
-        scrollLyricsBlockIndex += 1;
-      }
-
-      const scrollLyricsBlock = lyricsData[scrollLyricsBlockIndex];
-
-      scrollLyricsBlock.scrollEvents.push([currEvent.currTime, currEvent.payload[1] * 10]);
-    } else if (currEvent.payload[0] === 5) {
-      for (let ii = 0; ii < currEvent.payload[1]; ii++) {
-        activeLyricsBlocks.shift();
-      }
-    } else if (currEvent.payload[0] === 6) {
-      for (let ii = 0; ii < currEvent.payload[1]; ii++) {
-        activeLyricsBlocks.push(currLyricsBlockIndex);
-        currLyricsBlockIndex++;
-      }
-    } else if (currEvent.payload[0] === 12 || currEvent.payload[0] === 13) {
-      if (currEvent.payload[0] === 12) {
-        scrollLyricsBlockIndex += 1;
-      }
-
-      const scrollLyricsBlock = lyricsData[scrollLyricsBlockIndex];
-      
-      scrollLyricsBlock.scrollEvents.push([currEvent.currTime, currEvent.payload[1]]);
-    }
-  }
-
-  return [currLyricsBlockIndex, scrollLyricsBlockIndex];
-}
 
 function createTextureFromImage(gl, image, width, height, colorFormat) {
   const texture = gl.createTexture();
@@ -467,6 +441,44 @@ function populateBitmapFontWithTextureAtlas(gl, bitmapFont) {
   }
 }
 
+function processTimeline(timeline, lyricsData) {
+  let activeLyricsBlocks = [];
+  
+  let currLyricsBlockIndex = 0;
+  let scrollLyricsBlockIndex = -1;
+
+  for (const currEvent of timeline) {
+    const eventCode = currEvent.payload[0];
+
+    if ([0, 1, 12, 13].includes(eventCode)) {
+      if (eventCode % 2 === 0) {
+        scrollLyricsBlockIndex += 1;
+      }
+
+      const scrollSpeed = currEvent.payload[1] * (eventCode <= 1 ? 10 : 1);
+      const scrollLyricsBlock = lyricsData[scrollLyricsBlockIndex];  
+
+      scrollLyricsBlock.scrollEvents.push({
+        time: currEvent.currTime,
+        speed: scrollSpeed,
+      }); 
+    } else if (currEvent.payload[0] === 5) {
+      for (let i = 0; i < currEvent.payload[1]; i++) {
+        const fadeoutIndex = activeLyricsBlocks.shift();
+
+        lyricsData[fadeoutIndex].fadeoutTime = currEvent.currTime;
+      }
+    } else if (currEvent.payload[0] === 6) {
+      for (let i = 0; i < currEvent.payload[1]; i++) {
+        lyricsData[currLyricsBlockIndex].fadeinTime = currEvent.currTime;
+        
+        activeLyricsBlocks.push(currLyricsBlockIndex);
+        currLyricsBlockIndex++;
+      }
+    }
+  }
+}
+
 async function main() {
   const bitmapFonts = await fetch(BITMAP_FONT_FILENAME)
     .then(response => response.arrayBuffer())
@@ -487,10 +499,11 @@ async function main() {
   const bitmapFont = bitmapFonts[2];
  
   populateLyricsDataWithRomaji(bitmapFont, lyricsData);
+  processTimeline(timeline, lyricsData);
 
   const canvas = document.querySelector("#glcanvas");
   const gl = canvas.getContext("webgl2", {
-    antialias: true,
+    antialias: false,
     premultipliedAlpha: false,
   });
 
@@ -519,12 +532,7 @@ async function main() {
   requestAnimationFrame(render);
   
   let then = 0;
-  let lastRefreshTime = 0;
-
-  let currLyricsBlockIndex = 0;
-  let scrollLyricsBlockIndex = -1;
-
-  const activeLyricsBlocks = [];
+  let refreshTime = 0;
 
   function render(now) {
     if (then > 0) {
@@ -533,20 +541,7 @@ async function main() {
 
     then = now;
     
-    lastRefreshTime = audio.currentTime * 1000 + TIMING_OFFSET;
-
-    // Should encapsulate timeline into a class with it's own currLyricsBlockIndex and scrollLyricsBlockIndex
-    const updatedTimeline = processTimeline(
-      timeline, 
-      lyricsData, 
-      activeLyricsBlocks, 
-      currLyricsBlockIndex, 
-      scrollLyricsBlockIndex, 
-      lastRefreshTime,
-    );
-
-    currLyricsBlockIndex = updatedTimeline[0];
-    scrollLyricsBlockIndex = updatedTimeline[1];
+    refreshTime = audio.currentTime * 1000 + TIMING_OFFSET;
 
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
       
@@ -572,8 +567,10 @@ async function main() {
 
     gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
  
-    for (const lyricsBlockIndex of activeLyricsBlocks) {
-      drawLyricsBlock(gl, lastRefreshTime, texCoordBuffer, positionBuffer, scrollBuffer, bitmapFont, romajiFontTexture, lyricsData[lyricsBlockIndex]);
+    for (const lyricsBlock of lyricsData) {
+      if (refreshTime >= lyricsBlock.fadeinTime && refreshTime < lyricsBlock.fadeoutTime) {
+        drawLyricsBlock(gl, refreshTime, texCoordBuffer, positionBuffer, scrollBuffer, bitmapFont, romajiFontTexture, lyricsBlock);
+      }
     }
    
     requestAnimationFrame(render);
